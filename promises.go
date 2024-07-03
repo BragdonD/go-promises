@@ -117,7 +117,7 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 		case <-p.ctx.Done():
 			if p.ctx.Err() != nil || p.err != nil {
 				if rejectedFunc != nil {
-					rejectedFunc(p.err)
+					rejectedFunc(fmt.Errorf("promise rejected: %w", p.err))
 				}
 				reject(p.err)
 				return
@@ -133,7 +133,7 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 
 			vresolved := reflect.ValueOf(resolved)
 			if !isFunc(vresolved) {
-				fmt.Printf("Unsupported func type: %T\n", resolved)
+				reject(fmt.Errorf("unsupported func type: %T", resolved))
 				return
 			}
 
@@ -146,7 +146,7 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 					vresolved.Call([]reflect.Value{reflect.ValueOf(*p.res)})
 					resolve(nil)
 				} else {
-					panic(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
+					reject(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
 				}
 			} else if resolvedType.NumIn() == 0 {
 				if vresolved.Type().NumOut() == 1 {
@@ -156,12 +156,11 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 					vresolved.Call([]reflect.Value{})
 					resolve(nil)
 				} else {
-					panic(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
+					reject(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
 				}
 			} else {
-				fmt.Printf("Unsupported func type: %v, expected argument of type %v\n", resolvedType, reflect.TypeOf(*p.res))
+				reject(fmt.Errorf("unsupported func type: %v, expected argument of type %v", resolvedType, reflect.TypeOf(*p.res)))
 			}
-
 		}
 	})
 }
