@@ -165,12 +165,28 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 	})
 }
 
-func (p *Promise[T]) Catch() *Promise[T] {
-	return p
+func (p *Promise[T]) Catch() *Promise[any] {
+	return nil
 }
 
-func (p *Promise[T]) Finally() *Promise[T] {
-	return p
+func (p *Promise[T]) Finally(onFinnaly func()) *Promise[any] {
+	return NewPromise(func(resolve func(any), reject func(error)) {
+		defer onFinnaly()
+		select {
+		case <-p.ctx.Done():
+			if p.ctx.Err() != nil || p.err != nil {
+				reject(p.err)
+				return
+			}
+		case <-p.sync:
+			if p.err != nil {
+				reject(p.err)
+				return
+			}
+			resolve(p.res)
+			fmt.Println("here1")
+		}
+	})
 }
 
 func (p *Promise[T]) Await() (*T, error) {
