@@ -2,22 +2,32 @@ package main
 
 import (
 	"fmt"
+	"log"
 
 	gopromises "github.com/BragdonD/go-promises"
 )
 
 func main() {
-	fmt.Println("Not resolved")
+	log.Println("Not resolved")
 
-	gopromises.NewPromise(func(resolve func(string), reject func(error)) {
-		resolve("resolved!")
+	test, err := gopromises.NewPromise(func(resolve func(string), reject func(error)) {
+		reject(fmt.Errorf("a problem happened"))
+		// resolve("resolved!")
 	}).Then(func(val string) {
-		fmt.Printf("Firstly resolved: %s\n", val)
+		log.Printf("Firstly resolved: %s\n", val)
 	}).Finally(func() {
-		fmt.Println("Finally")
+		log.Print("Finally")
 	}).Then(func() {
-		fmt.Printf("Secondly resolved\n")
+		log.Printf("Secondly resolved\n")
 	}).Then(func() string {
 		return "test"
+	}).Catch(func(err error) {
+		log.Fatal(err)
 	}).Await()
+
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(*test)
 }

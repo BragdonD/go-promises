@@ -11,9 +11,9 @@ import (
 type PromiseState string
 
 const (
-	PromisePendingState = "PENDING"
-	PromiseFulFillState = "FULLFILL"
-	PromiseRejectState  = "REJECT"
+	PromisePendingState PromiseState = "PENDING"
+	PromiseFulFillState PromiseState = "FULLFILL"
+	PromiseRejectState  PromiseState = "REJECT"
 )
 
 type Promise[T any] struct {
@@ -94,79 +94,102 @@ func NewPromiseWithContext[T any](ctx context.Context, executor func(resolve fun
 type Function interface{}
 
 // isFunc returns a boolean indicating if obj is a function object
-func isFunc(obj reflect.Value) bool {
-	// Zero value reflected: not a valid function
-	if obj == (reflect.Value{}) {
+func isFunc(obj interface{}) bool {
+	if obj == nil {
 		return false
 	}
-
-	if obj.Type().Kind() != reflect.Func {
-		return false
-	}
-
-	return true
+	v := reflect.ValueOf(obj)
+	return v.Kind() == reflect.Func
 }
 
+// Then adds handlers to be called when the promise is resolved or rejected.
 func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[any] {
 	return NewPromise(func(resolve func(any), reject func(error)) {
 		var rejectedFunc func(error)
 		if len(rejected) > 0 {
 			rejectedFunc = rejected[0]
 		}
+
 		select {
 		case <-p.ctx.Done():
-			if p.ctx.Err() != nil || p.err != nil {
-				if rejectedFunc != nil {
-					rejectedFunc(fmt.Errorf("promise rejected: %w", p.err))
-				}
-				reject(p.err)
-				return
-			}
+			handleRejection(p.ctx.Err(), rejectedFunc, reject)
 		case <-p.sync:
-			if p.err != nil {
-				if rejectedFunc != nil {
-					rejectedFunc(p.err)
-					reject(p.err)
-				}
-				return
-			}
-
-			vresolved := reflect.ValueOf(resolved)
-			if !isFunc(vresolved) {
-				reject(fmt.Errorf("unsupported func type: %T", resolved))
-				return
-			}
-
-			resolvedType := vresolved.Type()
-			if resolvedType.NumIn() == 1 && resolvedType.In(0) == reflect.TypeOf(*p.res) {
-				if vresolved.Type().NumOut() == 1 {
-					result := vresolved.Call([]reflect.Value{reflect.ValueOf(*p.res)})[0].Interface()
-					resolve(result)
-				} else if vresolved.Type().NumOut() == 0 {
-					vresolved.Call([]reflect.Value{reflect.ValueOf(*p.res)})
-					resolve(nil)
-				} else {
-					reject(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
-				}
-			} else if resolvedType.NumIn() == 0 {
-				if vresolved.Type().NumOut() == 1 {
-					result := vresolved.Call([]reflect.Value{})[0].Interface()
-					resolve(result)
-				} else if vresolved.Type().NumOut() == 0 {
-					vresolved.Call([]reflect.Value{})
-					resolve(nil)
-				} else {
-					reject(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
-				}
-			} else {
-				reject(fmt.Errorf("unsupported func type: %v, expected argument of type %v", resolvedType, reflect.TypeOf(*p.res)))
-			}
+			handleSync(p, resolved, resolve, reject, rejectedFunc)
 		}
 	})
 }
 
-func (p *Promise[T]) Catch() *Promise[any] {
-	return nil
+// handleRejection is an helper function which handles the case where a promise result ends up beeing rejected
+func handleRejection(err error, rejectedFunc func(error), reject func(error)) {
+	if err != nil && rejectedFunc != nil {
+		rejectedFunc(fmt.Errorf("promise rejected: %w", err))
+	}
+	reject(err)
+}
+
+// handleSync is an helper function which handles the case where a promise result ends up beeing accepted
+func handleSync[T any](p *Promise[T], resolved Function, resolve func(any), reject func(error), rejectedFunc func(error)) {
+	if p.err != nil {
+		handleRejection(p.err, rejectedFunc, reject)
+		return
+	}
+
+	vresolved := reflect.ValueOf(resolved)
+	if !isFunc(resolved) {
+		reject(fmt.Errorf("unsupported func type: %T", resolved))
+		return
+	}
+
+	resolvedType := vresolved.Type()
+	if isValidResolvedFunc(p, resolvedType) {
+		callResolvedFunc(p, vresolved, resolvedType, resolve, reject)
+	} else {
+		reject(fmt.Errorf("unsupported func type: %v, expected argument of type %v", resolvedType, reflect.TypeOf(*p.res)))
+	}
+}
+
+// isValidResolvedFunc checks if a function is valid resolved function for the [Then] function
+// A valid function should only have :
+// - 1 or 0 entering parameter
+func isValidResolvedFunc[T any](p *Promise[T], resolvedType reflect.Type) bool {
+	return (resolvedType.NumIn() == 1 && resolvedType.In(0) == reflect.TypeOf(*p.res)) || resolvedType.NumIn() == 0
+}
+
+func callResolvedFunc[T any](p *Promise[T], vresolved reflect.Value, resolvedType reflect.Type, resolve func(any), reject func(error)) {
+	var results []reflect.Value
+	if resolvedType.NumIn() == 1 {
+		results = vresolved.Call([]reflect.Value{reflect.ValueOf(*p.res)})
+	} else {
+		results = vresolved.Call(nil)
+	}
+
+	switch len(results) {
+	case 0:
+		resolve(nil)
+	case 1:
+		resolve(results[0].Interface())
+	default:
+		reject(fmt.Errorf("more than one output is not permitted, try to create an output struct"))
+	}
+}
+
+func (p *Promise[T]) Catch(onRejected func(error)) *Promise[any] {
+	return NewPromise(func(resolve func(any), reject func(error)) {
+		select {
+		case <-p.ctx.Done():
+			if p.ctx.Err() != nil || p.err != nil {
+				reject(p.err)
+				onRejected(p.err)
+				return
+			}
+		case <-p.sync:
+			if p.err != nil {
+				onRejected(p.err)
+				return
+			}
+			resolve(nil)
+		}
+	})
 }
 
 func (p *Promise[T]) Finally(onFinnaly func()) *Promise[any] {
@@ -184,7 +207,6 @@ func (p *Promise[T]) Finally(onFinnaly func()) *Promise[any] {
 				return
 			}
 			resolve(p.res)
-			fmt.Println("here1")
 		}
 	})
 }
