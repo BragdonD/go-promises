@@ -10,24 +10,24 @@ import (
 func main() {
 	log.Println("Not resolved")
 
-	test, err := gopromises.NewPromise(func(resolve func(string), reject func(error)) {
-		reject(fmt.Errorf("a problem happened"))
-		// resolve("resolved!")
-	}).Then(func(val string) {
-		log.Printf("Firstly resolved: %s\n", val)
-	}).Finally(func() {
-		log.Print("Finally")
-	}).Then(func() {
-		log.Printf("Secondly resolved\n")
-	}).Then(func() string {
-		return "test"
-	}).Catch(func(err error) {
-		log.Fatal(err)
-	}).Await()
+	promise1 := gopromises.NewPromise(func(resolve func(string), reject func(error)) {
+		//reject(fmt.Errorf("a problem happened"))
+		resolve("resolved 1!")
+	}).Then(func(val string) string {
+		return val
+	})
 
+	promise2 := gopromises.NewPromise(func(resolve func(int), reject func(error)) {
+		//reject(fmt.Errorf("a problem happened"))
+		resolve(2)
+	}).Then(func(val int) int {
+		return val
+	})
+
+	val, err := gopromises.All(promise1, promise2).Await()
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(*test)
+	fmt.Println(*val...)
 }
