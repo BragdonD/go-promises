@@ -146,7 +146,7 @@ func (p *Promise[T]) Then(resolved Function, rejected ...func(error)) *Promise[a
 	})
 }
 
-// handleRejection is an helper function which handles the case where a promise result ends up beeing rejected
+// handleRejection is an helper function which handles the case where a promise result ends up being rejected
 func handleRejection(err error, rejectedFunc func(error), reject func(error)) {
 	if err != nil && rejectedFunc != nil {
 		rejectedFunc(fmt.Errorf("promise rejected: %w", err))
