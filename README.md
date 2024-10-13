@@ -155,7 +155,7 @@ allPromises.Then(func(results any) {
 
 ## Documentation
 
-For full documentation, visit godoc.org/github.com/bragdond/go-promises.
+For full documentation, visit [godoc.org/github.com/bragdond/go-promises](godoc.org/github.com/bragdond/go-promises).
 
 ## License
 
