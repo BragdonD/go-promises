@@ -37,8 +37,8 @@ type Promise[T any] struct {
 // resolve fulfills the promise with the given value.
 func (p *Promise[T]) resolve(val T) {
 	p.once.Do(func() {
-		p.res = &val  // Store the result.
-		close(p.sync) // Close the sync channel to signal resolution.
+		p.res = &val
+		close(p.sync)
 	})
 }
 
